@@ -16,43 +16,45 @@ object NotificationHelper {
     fun showCaptchaNotification(context: Context, captchaUrl: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Создаем канал уведомлений для Android 8.0+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Проверка капчи",
-                NotificationManager.IMPORTANCE_HIGH // HIGH обязателен, чтобы уведомление всплывало сверху
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Уведомления о необходимости ввода капчи HeadHunter"
             }
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Интент, который сработает при нажатии на уведомление.
-        // Он откроет системный браузер (или WebView) прямо со страницей капчи от HH.
+        // Создаем интент на открытие ссылки в браузере с жесткими флагами новой задачи
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
 
-        // Флаг FLAG_IMMUTABLE обязателен для Android 12+
+        // Используем флаг FLAG_MUTABLE вместо IMMUTABLE, чтобы Android разрешил фоновую передачу интента системе
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
         val pendingIntent = PendingIntent.getActivity(
             context,
             0,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            flags
         )
 
-        // Строим само уведомление
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert) // Можете заменить на свою иконку приложения
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Требуется ввести капчу!")
-            .setContentText("HeadHunter заблокировал запрос. Нажмите сюда, чтобы пройти проверку.")
+            .setContentText("Нажмите сюда, чтобы открыть страницу проверки в браузере")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setAutoCancel(true) // Чтобы уведомление исчезало после клика по нему
-            .setContentIntent(pendingIntent) // Привязываем наше действие клика
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
 
-        // Показываем уведомление
         notificationManager.notify(NOTIFICATION_ID, builder.build())
     }
 }

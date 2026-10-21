@@ -25,7 +25,7 @@ class CaptchaInterceptor : Interceptor {
                 val currentActivityThread = activityThread.getMethod("currentActivityThread").invoke(null)
                 val context = activityThread.getMethod("getApplication").invoke(currentActivityThread) as Application
 
-                NotificationHelper.showCaptchaNotification(context)
+                NotificationHelper.showCaptchaNotification(context, captchaUrl)
 
                 val answer = CaptchaRepository.waitForUserResponse(captchaUrl, requestId)
 

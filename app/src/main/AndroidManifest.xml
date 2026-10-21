@@ -38,7 +38,7 @@
                 <data android:scheme="hhandroid" />
             </intent-filter>
         </activity>
-    <activity android:name=".ui.CaptchaActivity" android:exported="false" android:theme="@android:style/Theme.DeviceDefault.Light.Dialog"/>
+    <activity android:name="com.github.s3rgeym.hh_resume_automate.ui.CaptchaActivity" android:exported="false" android:theme="@android:style/Theme.DeviceDefault.Light.Dialog"/>
 </application>
 
 </manifest>

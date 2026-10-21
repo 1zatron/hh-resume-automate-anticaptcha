@@ -1,4 +1,4 @@
-package ru.s3rgeym.hhresumeautomate.ui
+package com.github.s3rgeym.hh_resume_automate.ui
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -41,7 +41,6 @@ object NotificationHelper {
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         } catch (e: SecurityException) {
-            // Ошибка для Android 13+ без разрешений
         }
     }
 }

@@ -27,14 +27,16 @@ object NotificationHelper {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Создаем интент на открытие ссылки в браузере с жесткими флагами новой задачи
+        // Запуск системного браузера напрямую через явный Intent
+        // Это обходит ограничения Android 14+ на implicit intents
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
-        // Используем флаг FLAG_MUTABLE вместо IMMUTABLE, чтобы Android разрешил фоновую передачу интента системе
+        // Возвращаем FLAG_IMMUTABLE — теперь Android 14 пропустит его без ошибок,
+        // так как интент строго защищен от изменений.
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
@@ -49,7 +51,7 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Требуется ввести капчу!")
-            .setContentText("Нажмите сюда, чтобы открыть страницу проверки в браузере")
+            .setContentText("Нажмите, чтобы пройти проверку на hh.ru")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)

@@ -240,8 +240,25 @@ class ApiClient(
         val keys = this.keys()
         while (keys.hasNext()) {
             val key = keys.next()
-            map[key] = this.opt(key)
+            var value = this.get(key)
+            if (value is org.json.JSONArray) {
+                value = value.toList()
+            } else if (value is JSONObject) {
+                value = value.toMap()
+            } else if (value == JSONObject.NULL) {
+                value = null
+            }
+            map[key] = value
         }
         return map
     }
-}
+
+    private fun org.json.JSONArray.toList(): List<Any?> {
+        val list = mutableListOf<Any?>()
+        for (i in 0 until this.length()) {
+            var value = this.get(i)
+            if (value is org.json.JSONArray) {
+                value = value.toList()
+            } else if (value is JSONObject) {
+                value = value.toMap()
+            } else if (value == JSONObject.NULL) {

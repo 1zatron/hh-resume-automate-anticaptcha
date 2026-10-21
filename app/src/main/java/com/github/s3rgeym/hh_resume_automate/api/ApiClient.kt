@@ -243,15 +243,17 @@ class ApiClient(
 }
 
 // Функции расширения для преобразования JSONObject и JSONArray в коллекции Kotlin
-private fun JSONArray.toList(): List<Any?> {
+// Удалите старые toList() и toMap() в самом низу и вставьте это:
+
+private fun org.json.JSONArray.toList(): List<Any?> {
     val list = mutableListOf<Any?>()
     for (i in 0 until this.length()) {
-        var value = this.get(i)
-        if (value is JSONArray) {
+        var value: Any? = this.get(i)
+        if (value is org.json.JSONArray) {
             value = value.toList()
-        } else if (value is JSONObject) {
+        } else if (value is org.json.JSONObject) {
             value = value.toMap()
-        } else if (value == JSONObject.NULL) {
+        } else if (value == org.json.JSONObject.NULL) {
             value = null
         }
         list.add(value)
@@ -259,8 +261,20 @@ private fun JSONArray.toList(): List<Any?> {
     return list
 }
 
-private fun JSONObject.toMap(): Map<String, Any?> {
+private fun org.json.JSONObject.toMap(): Map<String, Any?> {
     val map = mutableMapOf<String, Any?>()
     val keysItr = this.keys()
     while (keysItr.hasNext()) {
         val key = keysItr.next()
+        var value: Any? = this.get(key)
+        if (value is org.json.JSONArray) {
+            value = value.toList()
+        } else if (value is org.json.JSONObject) {
+            value = value.toMap()
+        } else if (value == org.json.JSONObject.NULL) {
+            value = null
+        }
+        map[key] = value
+    }
+    return map
+}

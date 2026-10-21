@@ -3,12 +3,15 @@ package com.github.s3rgeym.hh_resume_automate.api
 import ru.s3rgeym.hhresumeautomate.data.network.CaptchaInterceptor
 import android.content.SharedPreferences
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.UUID
@@ -61,7 +64,7 @@ class ApiClient(
 ) {
     protected val client = OkHttpClient.Builder()
         .followRedirects(false)
-        .addInterceptor(CaptchaInterceptor()) // <-- Вызов без контекста, перехватчик разберется сам
+        .addInterceptor(CaptchaInterceptor())
         .addInterceptor(ApiDelayInterceptor(apiDelay))
         .build()
 
@@ -141,7 +144,7 @@ class ApiClient(
         endpoint: String,
         params: Map<String, Any?>? = null,
         includeAuthHeader: Boolean = false,
-    ): Map<String, Any?> {
+    ): Map<String, Any?> = withContext(Dispatchers.IO) {
         require(method in listOf("GET", "POST", "PUT", "DELETE")) { "Invalid HTTP method: $method" }
         val hasBody = method in listOf("POST", "PUT")
         val url = buildUrl(baseUrl, endpoint, if (hasBody) null else params?.mapValues { it.value?.toString() ?: "" })
@@ -169,7 +172,7 @@ class ApiClient(
         if (!response.isSuccessful) {
             throwApiException(response, json)
         }
-        return json
+        return@withContext json
     }
 
     protected fun buildUrl(baseUrl: String, endpoint: String, params: Map<String, Any?>? = null): String {
@@ -195,6 +198,30 @@ class ApiClient(
         return "ru.hh.android/$major.$minor.$patch, Device: $randomDeviceModel"
     }
 
+    private fun defaultHeaders(): Headers {
+        return Headers.Builder()
+            .add("User-Agent", generateUserAgent())
+            .add("Accept", "application/json")
+            .build()
+    }
+
+    private fun throwApiException(response: Response, json: Map<String, Any?>): Nothing {
+        when (response.code) {
+            400 -> throw BadRequestException(json)
+            403 -> {
+                if (ApiException.isLimitExceeded(json)) {
+                    throw LimitExceededException(json)
+                }
+                throw ForbiddenException(json)
+            }
+            404 -> throw ResourceNotFoundException(json)
+            429 -> throw TooManyRequestsException(json)
+            in 400..499 -> throw ClientErrorException(json)
+            in 500..599 -> throw ServerErrorException(json)
+            else -> throw IOException("Unexpected HTTP code ${response.code}")
+        }
+    }
+
     private fun loadFromPrefs(prefs: SharedPreferences) {
         accessToken = prefs.getString("access_token", null)
         refreshToken = prefs.getString("refresh_token", null)
@@ -213,52 +240,27 @@ class ApiClient(
             apply()
         }
     }
+}
 
-    private fun defaultHeaders(): Headers {
-        return Headers.Builder()
-            .add("User-Agent", generateUserAgent())
-            .add("Accept", "application/json")
-            .build()
-    }
-
-    private fun throwApiException(response: Response, json: Map<String, Any?>) {
-        when (response.code) {
-            400 -> throw BadRequestException(json)
-            403 -> throw ForbiddenException(json)
-            404 -> throw ResourceNotFoundException(json)
-            429 -> throw TooManyRequestsException(json)
-            else -> {
-                if (ApiException.isLimitExceeded(json)) throw LimitExceededException(json)
-                if (response.code in 500..599) throw ServerErrorException(json)
-                throw ClientErrorException(json)
-            }
+// Функции расширения для преобразования JSONObject и JSONArray в коллекции Kotlin
+private fun JSONArray.toList(): List<Any?> {
+    val list = mutableListOf<Any?>()
+    for (i in 0 until this.length()) {
+        var value = this.get(i)
+        if (value is JSONArray) {
+            value = value.toList()
+        } else if (value is JSONObject) {
+            value = value.toMap()
+        } else if (value == JSONObject.NULL) {
+            value = null
         }
+        list.add(value)
     }
+    return list
+}
 
-    private fun JSONObject.toMap(): Map<String, Any?> {
-        val map = mutableMapOf<String, Any?>()
-        val keys = this.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            var value = this.get(key)
-            if (value is org.json.JSONArray) {
-                value = value.toList()
-            } else if (value is JSONObject) {
-                value = value.toMap()
-            } else if (value == JSONObject.NULL) {
-                value = null
-            }
-            map[key] = value
-        }
-        return map
-    }
-
-    private fun org.json.JSONArray.toList(): List<Any?> {
-        val list = mutableListOf<Any?>()
-        for (i in 0 until this.length()) {
-            var value = this.get(i)
-            if (value is org.json.JSONArray) {
-                value = value.toList()
-            } else if (value is JSONObject) {
-                value = value.toMap()
-            } else if (value == JSONObject.NULL) {
+private fun JSONObject.toMap(): Map<String, Any?> {
+    val map = mutableMapOf<String, Any?>()
+    val keysItr = this.keys()
+    while (keysItr.hasNext()) {
+        val key = keysItr.next()

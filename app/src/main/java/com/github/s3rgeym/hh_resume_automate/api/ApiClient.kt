@@ -221,18 +221,6 @@ class ApiClient(
             .build()
     }
 
-    private fun toMap(json: JSONObject): Map<String, Any?> {
-        val map = mutableMapOf<String, Any?>()
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            map[key] = json.get(key)
-        }
-        return map
-    }
-
-    private fun JSONObject.toMap(): Map<String, Any?> = toMap(this)
-
     private fun throwApiException(response: Response, json: Map<String, Any?>) {
         when (response.code) {
             400 -> throw BadRequestException(json)
@@ -245,5 +233,15 @@ class ApiClient(
                 throw ClientErrorException(json)
             }
         }
+    }
+
+    private fun JSONObject.toMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        val keys = this.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            map[key] = this.opt(key)
+        }
+        return map
     }
 }

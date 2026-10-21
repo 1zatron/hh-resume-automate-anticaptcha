@@ -13,21 +13,25 @@ class CaptchaInterceptor(private val context: Context) : Interceptor {
         val request = chain.request()
         val response = chain.proceed(request)
 
+        // HH обычно отдает статус 429 или 403 при вылете капчи
         if (response.code == 429 || response.code == 403) {
             val bodyString = response.peekBody(Long.MAX_VALUE).string()
-            
             if (bodyString.contains("captcha_required")) {
                 val json = JSONObject(bodyString)
                 val captchaUrl = json.optString("captcha_url")
                 val requestId = captchaUrl.substringAfter("request_id=").substringBefore("&")
 
+                // Вызываем push-уведомление на телефоне
                 NotificationHelper.showCaptchaNotification(context)
 
+                // Замораживаем сетевой поток и ждем, пока пользователь введет ответ
                 val answer = CaptchaRepository.waitForUserResponse(captchaUrl, requestId)
 
                 if (!answer.isNullOrBlank()) {
+                    // Отправляем введенный ответ обратно на HH
                     val isSuccess = submitCaptchaToHH(chain, requestId, answer)
                     if (isSuccess) {
+                        // Если капча принята, повторяем наш изначальный запрос отклика
                         return chain.proceed(request)
                     }
                 }

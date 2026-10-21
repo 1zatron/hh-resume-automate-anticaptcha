@@ -1,7 +1,6 @@
 package com.github.s3rgeym.hh_resume_automate.api
 
 import ru.s3rgeym.hhresumeautomate.data.network.CaptchaInterceptor
-import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import okhttp3.FormBody
@@ -17,7 +16,6 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 sealed class ApiException(val json: Map<String, Any?>, message: String) : Exception(message) {
-
     companion object {
         fun isLimitExceeded(json: Map<String, Any?>): Boolean {
             val errors = json["errors"] as? List<*> ?: return false
@@ -43,7 +41,6 @@ class ApiDelayInterceptor(private val apiDelay: Long) : Interceptor {
         val lastTime = lastRequestTime.get()
         val waitTime = lastTime + apiDelay - System.currentTimeMillis()
         if (waitTime > 0) {
-            System.err.println("wait $waitTime")
             Thread.sleep(waitTime)
         }
         lastRequestTime.set(System.currentTimeMillis())
@@ -52,7 +49,6 @@ class ApiDelayInterceptor(private val apiDelay: Long) : Interceptor {
 }
 
 class ApiClient(
-    protected val context: Context, // <-- Контекст теперь передается сюда
     public var accessToken: String? = null,
     public var refreshToken: String? = null,
     public var accessExpiresAt: Long = 0,
@@ -65,7 +61,7 @@ class ApiClient(
 ) {
     protected val client = OkHttpClient.Builder()
         .followRedirects(false)
-        .addInterceptor(CaptchaInterceptor(context)) // <-- Внедряем наш перехватчик капчи
+        .addInterceptor(CaptchaInterceptor()) // <-- Вызов без контекста, перехватчик разберется сам
         .addInterceptor(ApiDelayInterceptor(apiDelay))
         .build()
 
@@ -167,14 +163,13 @@ class ApiClient(
         }
 
         val response = client.newCall(requestBuilder.build()).execute()
-        System.err.println("[${response.code}] ${response.request.method} ${response.request.url}")
         val bodyStr = response.body?.string()?.trim()
         val json = if (!bodyStr.isNullOrEmpty()) JSONObject(bodyStr).toMap() else emptyMap()
 
         if (!response.isSuccessful) {
             throwApiException(response, json)
         }
-        return json.toMap()
+        return json
     }
 
     protected fun buildUrl(baseUrl: String, endpoint: String, params: Map<String, Any?>? = null): String {
@@ -189,9 +184,7 @@ class ApiClient(
 
     protected fun generateRandomDeviceModel(): String {
         val charset = ('A'..'Z') + ('0'..'9')
-        return (1..10)
-            .map { charset.random(Random) }
-            .joinToString("")
+        return (1..10).map { charset.random(Random) }.joinToString("")
     }
 
     protected fun generateUserAgent(): String {
@@ -199,9 +192,58 @@ class ApiClient(
         val minor = Random.nextInt(100, 150)
         val patch = Random.nextInt(10000, 15000)
         val randomDeviceModel = generateRandomDeviceModel()
-        val androidOsVersion = Random.nextInt(10, 15)
-        val randomUuid = UUID.randomUUID().toString()
+        return "ru.hh.android/$major.$minor.$patch, Device: $randomDeviceModel"
+    }
 
-        return "ru.hh.android/$major.$minor.$patch, Device: $randomDeviceModel,"
+    private fun loadFromPrefs(prefs: SharedPreferences) {
+        accessToken = prefs.getString("access_token", null)
+        refreshToken = prefs.getString("refresh_token", null)
+        accessExpiresAt = prefs.getLong("access_expires_at", 0)
+    }
+
+    private fun handleToken(token: Map<String, Any?>) {
+        accessToken = token["access_token"] as? String
+        refreshToken = token["refresh_token"] as? String
+        val expiresIn = (token["expires_in"] as? Number)?.toLong() ?: 0L
+        accessExpiresAt = System.currentTimeMillis() + (expiresIn * 1000)
+        sharedPrefs?.edit()?.apply {
+            putString("access_token", accessToken)
+            putString("refresh_token", refreshToken)
+            putLong("access_expires_at", accessExpiresAt)
+            apply()
+        }
+    }
+
+    private fun defaultHeaders(): Headers {
+        return Headers.Builder()
+            .add("User-Agent", generateUserAgent())
+            .add("Accept", "application/json")
+            .build()
+    }
+
+    private fun toMap(json: JSONObject): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            map[key] = json.get(key)
+        }
+        return map
+    }
+
+    private fun JSONObject.toMap(): Map<String, Any?> = toMap(this)
+
+    private fun throwApiException(response: Response, json: Map<String, Any?>) {
+        when (response.code) {
+            400 -> throw BadRequestException(json)
+            403 -> throw ForbiddenException(json)
+            404 -> throw ResourceNotFoundException(json)
+            429 -> throw TooManyRequestsException(json)
+            else -> {
+                if (ApiException.isLimitExceeded(json)) throw LimitExceededException(json)
+                if (response.code in 500..599) throw ServerErrorException(json)
+                throw ClientErrorException(json)
+            }
+        }
     }
 }

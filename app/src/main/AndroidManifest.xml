@@ -38,6 +38,7 @@
                 <data android:scheme="hhandroid" />
             </intent-filter>
         </activity>
-    </application>
+    <activity android:name=".ui.CaptchaActivity" android:exported="false" android:theme="@style/Theme.AppCompat.DayNight.Dialog"/>
+</application>
 
 </manifest>

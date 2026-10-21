@@ -15,6 +15,7 @@ object NotificationHelper {
     fun showCaptchaNotification(context: Context, captchaUrl: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        // Настройка канала уведомлений для Android 8.0+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -22,21 +23,24 @@ object NotificationHelper {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Уведомления о необходимости ввода капчи HeadHunter"
+                enableLights(true)
+                enableVibration(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Вызываем класс главного экрана приложения напрямую.
-        // Используем имя пакета и класс программно, чтобы избежать ошибок импорта.
-        val mainActivityClass = Class.forName("com.github.s3rgeym.hh_resume_automate.ui.MainActivity")
-        val intent = Intent(context, mainActivityClass).apply {
-            // Передаем ссылку на капчу внутрь интента
-            putExtra("OPEN_CAPTCHA_URL", captchaUrl)
-            action = Intent.ACTION_RUN
+        // ЯВНЫЙ ИНТЕНТ: Открываем внутреннее окно CaptchaActivity из вашего проекта.
+        // Android разрешает фоновым сервисам открывать экраны своего же приложения.
+        val intent = Intent(context, CaptchaActivity::class.java).apply {
+            putExtra("captcha_url", captchaUrl) // Передаем ссылку на капчу для отображения
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
+        // Генерируем уникальный requestCode на основе текущего времени, 
+        // чтобы система не кэшировала старые ссылки
         val requestCode = System.currentTimeMillis().toInt()
+
+        // Используем FLAG_IMMUTABLE для корректной работы на Android 14+ (U+)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
@@ -53,11 +57,11 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Требуется ввести капчу hh.ru!")
-            .setContentText("Нажмите здесь для прохождения проверки")
+            .setContentText("Нажмите здесь, чтобы открыть окно ввода капчи")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setOngoing(true) 
-            .setAutoCancel(true)
+            .setOngoing(true) // Уведомление останется в шторке, пока вы не нажмете
+            .setAutoCancel(true) // Уведомление закроется сразу после клика
             .setContentIntent(pendingIntent)
 
         notificationManager.notify(NOTIFICATION_ID, builder.build())

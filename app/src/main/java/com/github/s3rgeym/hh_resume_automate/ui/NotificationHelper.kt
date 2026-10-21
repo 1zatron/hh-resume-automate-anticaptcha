@@ -1,3 +1,5 @@
+package com.github.s3rgeym.hh_resume_automate.ui
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent

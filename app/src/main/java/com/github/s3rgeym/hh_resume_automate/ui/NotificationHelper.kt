@@ -29,15 +29,16 @@ object NotificationHelper {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Чистый интент для открытия ссылки. Android сам поймет, что нужно запустить браузер.
-        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        // Создаем чистый интент для веб-страниц
+        val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse(captchaUrl)
+            // Эти флаги заставляют Android вызывать браузер как независимый процесс, 
+            // игнорируя то, что наше приложение сейчас заблокировано сетевым запросом
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         }
 
-        // Уникальный requestCode на основе времени, чтобы система гарантированно создавала новое действие
         val requestCode = System.currentTimeMillis().toInt()
 
-        // FLAG_IMMUTABLE обязателен для Android 14+ при передаче управления операционной системе
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
@@ -54,11 +55,11 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Требуется ввести капчу hh.ru!")
-            .setContentText("Нажмите здесь для перехода в браузер и прохождения проверки")
+            .setContentText("Нажмите здесь для перехода в браузер")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setOngoing(true) // ВАЖНО: Уведомление нельзя смахнуть случайно, оно держится на экране
-            .setAutoCancel(false) // ВАЖНО: Уведомление не исчезает само по себе при клике
+            .setOngoing(true) 
+            .setAutoCancel(false)
             .setContentIntent(pendingIntent)
 
         notificationManager.notify(NOTIFICATION_ID, builder.build())

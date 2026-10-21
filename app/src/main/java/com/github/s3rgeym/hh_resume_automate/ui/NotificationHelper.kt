@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 object NotificationHelper {
@@ -27,31 +29,41 @@ object NotificationHelper {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Запуск системного браузера напрямую через явный Intent
-        // Это обходит ограничения Android 14+ на implicit intents
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        // 1. ПРИНУДИТЕЛЬНЫЙ ВЫЗОВ БРАУЗЕРА ИЗ ГЛАВНОГО ПОТОКА (ОБХОД БЛОКИРОВКИ СЕТИ)
+        // Мы отправляем команду на открытие страницы капчи прямо в Looper операционной системы.
+        // Браузер откроется автоматически, даже если фоновый поток OkHttp сейчас жестко заблокирован.
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+                context.startActivity(browserIntent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
-        // Возвращаем FLAG_IMMUTABLE — теперь Android 14 пропустит его без ошибок,
-        // так как интент строго защищен от изменений.
+        // 2. СОЗДАНИЕ УВЕДОМЛЕНИЯ КАК ПОДСТРАХОВКИ
+        // Если пользователь случайно свернет браузер, он сможет вернуться туда через уведомление
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val requestCode = System.currentTimeMillis().toInt()
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            flags
-        )
+        val pendingIntent = PendingIntent.getActivity(context, requestCode, intent, flags)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Требуется ввести капчу!")
-            .setContentText("Нажмите, чтобы пройти проверку на hh.ru")
+            .setContentText("Браузер открыт автоматически. Нажмите, если страница закрылась.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)

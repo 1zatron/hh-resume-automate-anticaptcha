@@ -1,5 +1,7 @@
 package com.github.s3rgeym.hh_resume_automate.api
 
+import ru.s3rgeym.hhresumeautomate.data.network.CaptchaInterceptor
+import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import okhttp3.FormBody
@@ -17,8 +19,6 @@ import kotlin.random.Random
 sealed class ApiException(val json: Map<String, Any?>, message: String) : Exception(message) {
 
     companion object {
-        // Вспомогательный метод для проверки, является ли JSON-ответ ошибкой превышения лимита
-        // Этот метод вызывается ТОЛЬКО если HTTP-ответ НЕУСПЕШНЫЙ (т.е. response.isSuccessful == false)
         fun isLimitExceeded(json: Map<String, Any?>): Boolean {
             val errors = json["errors"] as? List<*> ?: return false
             return errors.any {
@@ -52,6 +52,7 @@ class ApiDelayInterceptor(private val apiDelay: Long) : Interceptor {
 }
 
 class ApiClient(
+    protected val context: Context, // <-- Контекст теперь передается сюда
     public var accessToken: String? = null,
     public var refreshToken: String? = null,
     public var accessExpiresAt: Long = 0,
@@ -64,6 +65,7 @@ class ApiClient(
 ) {
     protected val client = OkHttpClient.Builder()
         .followRedirects(false)
+        .addInterceptor(CaptchaInterceptor(context)) // <-- Внедряем наш перехватчик капчи
         .addInterceptor(ApiDelayInterceptor(apiDelay))
         .build()
 
@@ -169,7 +171,6 @@ class ApiClient(
         val bodyStr = response.body?.string()?.trim()
         val json = if (!bodyStr.isNullOrEmpty()) JSONObject(bodyStr).toMap() else emptyMap()
 
-        // Теперь проверка на неуспешный ответ происходит перед анализом JSON
         if (!response.isSuccessful) {
             throwApiException(response, json)
         }
@@ -201,88 +202,6 @@ class ApiClient(
         val androidOsVersion = Random.nextInt(10, 15)
         val randomUuid = UUID.randomUUID().toString()
 
-        // Оригинальный:
-        // ru.hh.android/7.122.11395, Device: 23053RN02Y, Android OS: 13 (UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-
-        // Рандомный:
-        // ru.hh.android/6.149.14615, Device: ZV6EK4FGOR, Android OS: 12 (UUID: a482b404-b4d8-4f6b-9ac0-48be9367a42a)
-        return "ru.hh.android/$major.$minor.$patch, Device: $randomDeviceModel, Android OS: $androidOsVersion (UUID: $randomUuid)"
-    }
-
-    protected fun defaultHeaders(): Headers {
-        val userAgent = generateUserAgent()
-        System.err.println("Random User-Agent: $userAgent")
-        return Headers.Builder().apply {
-            add("Accept", "*/*")
-            add("User-Agent", userAgent)
-        }.build()
-    }
-
-    protected fun throwApiException(response: Response, json: Map<String, Any?>) {
-        // Мы находимся в этом методе только потому, что response.isSuccessful == false.
-        // Теперь проверка на LimitExceededException идет первой в цепочке,
-        // так как это наиболее специфический случай ошибки, который может сопровождаться разными кодами.
-        if (ApiException.isLimitExceeded(json)) {
-            throw LimitExceededException(json.toMap())
-        }
-
-        // Если это не LimitExceeded по JSON, то проверяем по HTTP-коду.
-        when (response.code) {
-            400 -> throw BadRequestException(json.toMap())
-            403 -> throw ForbiddenException(json.toMap())
-            404 -> throw ResourceNotFoundException(json.toMap())
-            429 -> throw TooManyRequestsException(json.toMap()) // Это останется для общих 429
-            in 400 until 500 -> throw ClientErrorException(json.toMap())
-            in 500..599 -> throw ServerErrorException(json.toMap())
-            else -> throw IOException("Unexpected API response code: ${response.code}")
-        }
-    }
-
-    protected fun handleToken(token: Map<String, Any?>) {
-        System.err.println("token: $token")
-        accessToken = token["access_token"] as? String
-        refreshToken = token["refresh_token"] as? String
-        accessExpiresAt = ((token["expires_in"] as? Number)?.toLong() ?: 0) * 1000 + System.currentTimeMillis()
-        sharedPrefs?.let { saveToPrefs(it) }
-    }
-
-    fun saveToPrefs(sharedPrefs: SharedPreferences) {
-        with(sharedPrefs.edit()) {
-            putString("access_token", accessToken)
-            putString("refresh_token", refreshToken)
-            putLong("access_expires_at", accessExpiresAt)
-            apply()
-        }
-    }
-
-    fun loadFromPrefs(sharedPrefs: SharedPreferences) {
-        accessToken = sharedPrefs.getString("access_token", null) ?: ""
-        refreshToken = sharedPrefs.getString("refresh_token", null) ?: ""
-        accessExpiresAt = sharedPrefs.getLong("access_expires_at", 0)
-    }
-}
-
-fun JSONObject.toMap(): Map<String, Any?> {
-    val map = mutableMapOf<String, Any?>()
-    val keys = this.keys()
-    while (keys.hasNext()) {
-        val key = keys.next()
-        val value = this[key]
-        map[key] = when (value) {
-            is JSONObject -> value.toMap()
-            is org.json.JSONArray -> value.toList()
-            else -> value
-        }
-    }
-    return map
-}
-
-fun org.json.JSONArray.toList(): List<Any?> {
-    return (0 until this.length()).map { index ->
-        when (val value = this[index]) {
-            is JSONObject -> value.toMap()
-            is org.json.JSONArray -> value.toList()
-            else -> value
-        }
+        return "ru.hh.android/$major.$minor.$patch, Device: $randomDeviceModel,"
     }
 }

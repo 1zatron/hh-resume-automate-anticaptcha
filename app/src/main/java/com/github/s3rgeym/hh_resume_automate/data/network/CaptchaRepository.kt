@@ -19,7 +19,9 @@ object CaptchaRepository {
         captchaAnswer = null
         latch = CountDownLatch(1)
         _currentTask.value = CaptchaTask(imageUrl, requestId)
-        latch?.await(2, TimeUnit.MINUTES) 
+        
+        // Ждем ввода от пользователя максимум 2 минуты, затем сбрасываем
+        latch?.await(2, TimeUnit.MINUTES)
         _currentTask.value = null
         return captchaAnswer
     }
@@ -28,7 +30,7 @@ object CaptchaRepository {
         captchaAnswer = answer
         latch?.countDown()
     }
-    
+
     fun cancel() {
         captchaAnswer = null
         latch?.countDown()

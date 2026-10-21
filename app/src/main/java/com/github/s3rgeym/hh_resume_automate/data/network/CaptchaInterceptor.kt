@@ -1,19 +1,18 @@
 package ru.s3rgeym.hhresumeautomate.data.network
 
-import android.content.Context
+import android.app.Application
 import okhttp3.FormBody
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
-import ru.s3rgeym.hhresumeautomate.utils.NotificationHelper
+import com.github.s3rgeym.hh_resume_automate.ui.NotificationHelper
 
-class CaptchaInterceptor(private val context: Context) : Interceptor {
+class CaptchaInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val response = chain.proceed(request)
 
-        // HH обычно отдает статус 429 или 403 при вылете капчи
         if (response.code == 429 || response.code == 403) {
             val bodyString = response.peekBody(Long.MAX_VALUE).string()
             if (bodyString.contains("captcha_required")) {
@@ -21,17 +20,18 @@ class CaptchaInterceptor(private val context: Context) : Interceptor {
                 val captchaUrl = json.optString("captcha_url")
                 val requestId = captchaUrl.substringAfter("request_id=").substringBefore("&")
 
-                // Вызываем push-уведомление на телефоне
+                // Получаем контекст приложения напрямую через рефлексию (безопасно для Android)
+                val activityThread = Class.forName("android.app.ActivityThread")
+                val currentActivityThread = activityThread.getMethod("currentActivityThread").invoke(null)
+                val context = activityThread.getMethod("getApplication").invoke(currentActivityThread) as Application
+
                 NotificationHelper.showCaptchaNotification(context)
 
-                // Замораживаем сетевой поток и ждем, пока пользователь введет ответ
                 val answer = CaptchaRepository.waitForUserResponse(captchaUrl, requestId)
 
                 if (!answer.isNullOrBlank()) {
-                    // Отправляем введенный ответ обратно на HH
                     val isSuccess = submitCaptchaToHH(chain, requestId, answer)
                     if (isSuccess) {
-                        // Если капча принята, повторяем наш изначальный запрос отклика
                         return chain.proceed(request)
                     }
                 }

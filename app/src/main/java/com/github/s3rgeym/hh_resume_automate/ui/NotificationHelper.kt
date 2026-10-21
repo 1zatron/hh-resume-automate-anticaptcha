@@ -7,8 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 object NotificationHelper {
@@ -25,48 +23,42 @@ object NotificationHelper {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Уведомления о необходимости ввода капчи HeadHunter"
+                enableLights(true)
+                enableVibration(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
 
-        // 1. ПРИНУДИТЕЛЬНЫЙ ВЫЗОВ БРАУЗЕРА ИЗ ГЛАВНОГО ПОТОКА (ОБХОД БЛОКИРОВКИ СЕТИ)
-        // Мы отправляем команду на открытие страницы капчи прямо в Looper операционной системы.
-        // Браузер откроется автоматически, даже если фоновый поток OkHttp сейчас жестко заблокирован.
-        Handler(Looper.getMainLooper()).post {
-            try {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-                    addCategory(Intent.CATEGORY_BROWSABLE)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                }
-                context.startActivity(browserIntent)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        // Чистый интент для открытия ссылки. Android сам поймет, что нужно запустить браузер.
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
 
-        // 2. СОЗДАНИЕ УВЕДОМЛЕНИЯ КАК ПОДСТРАХОВКИ
-        // Если пользователь случайно свернет браузер, он сможет вернуться туда через уведомление
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(captchaUrl)).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
+        // Уникальный requestCode на основе времени, чтобы система гарантированно создавала новое действие
         val requestCode = System.currentTimeMillis().toInt()
+
+        // FLAG_IMMUTABLE обязателен для Android 14+ при передаче управления операционной системе
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val pendingIntent = PendingIntent.getActivity(context, requestCode, intent, flags)
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            browserIntent,
+            flags
+        )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Требуется ввести капчу!")
-            .setContentText("Браузер открыт автоматически. Нажмите, если страница закрылась.")
+            .setContentTitle("Требуется ввести капчу hh.ru!")
+            .setContentText("Нажмите здесь для перехода в браузер и прохождения проверки")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setAutoCancel(true)
+            .setOngoing(true) // ВАЖНО: Уведомление нельзя смахнуть случайно, оно держится на экране
+            .setAutoCancel(false) // ВАЖНО: Уведомление не исчезает само по себе при клике
             .setContentIntent(pendingIntent)
 
         notificationManager.notify(NOTIFICATION_ID, builder.build())
